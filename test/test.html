@@ -10,15 +10,53 @@
 </head>
 <body>
     <div>
-        <p class='cls1'>cls1样式</p>
-        <p class='cls2'>cls2样式</p>
-        <p class='cls3'>cls2样式</p>
-        <div>aaaa
+        
     </div>
-    <button onclick='changeCls()'>修改样式</button>
-    <button onclick='changeCls1()'>修改样式1</button>
+    <button onclick='send1()'>发送消息1</button>
+    <button onclick='send2()'>发送消息2</button>
 </body>
 <script>
+    class M1{
+        constructor(x){
+            this.x = x;
+        }
+        show(){
+            document.querySelector('div').innerHTML = this.x;
+        }
+    }
+    
+    let blob = new Blob([`
+    self.onmessage = (e)=>{
+        e.data.m.change('测试反向')
+
+        
+    }`],{type : 'text/javascript'});
+    console.log(blob);
+    let m1 = new M1(20);
+    // let worker = new Worker(URL.createObjectURL(blob));
+    let worker = new Worker('./js/worker.js');
+
+    
+
+    worker.onmessage = (e)=>{
+        console.log(e.data);
+    }
+    let map = new Map();
+    map.set('x',1);
+    let o1 = {x:2}
+    let o2 = {o1:o1,m:new M1(10),map:map}
+    o1.o2 = o2;
+    function send1(){
+        // worker.postMessage({op:1,msg:'这是消息1'});
+        worker.postMessage(o2);
+    }
+
+    function send2(){
+        worker.postMessage({op:2,msg:'这是消息2'});
+    }
+
+    
+
     // let o = {b:{c:1,x:{y:2}},y:10}
     // let foo = new Function('model','field','return model[field]');
 

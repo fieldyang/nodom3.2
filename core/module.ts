@@ -76,7 +76,7 @@ export class Module {
     /**
      * 数据模型工厂
      */
-    public modelManager: ModelManager;
+    // public modelManager: ModelManager;
 
     /**
      * 放置模块的容器
@@ -114,7 +114,7 @@ export class Module {
         //加入模块工厂
         ModuleFactory.add(this);
         // 初始化模型工厂
-        this.modelManager = new ModelManager(this);
+        // this.modelManager = new ModelManager(this);
     }
 
     /**
@@ -163,25 +163,26 @@ export class Module {
         if(!this.originTree){
             this.compile();
         }
-        let root:Element = this.originTree.clone();
+        // let root:Element = this.originTree.clone(this);
         
         //执行前置方法
         this.doRenderOps(0);
+        this.doModuleEvent('onBeforeRender');
         if (!this.renderTree) {
-            this.doFirstRender(root);
+            this.doFirstRender();
         } else { //增量渲染
             //执行每次渲染前事件
-            this.doModuleEvent('onBeforeRender');
             if (this.model) {
-                root.model = this.model;
+                // root.model = this.model;
                 let oldTree = this.renderTree;
-                this.renderTree = root;
-                //渲染
-                root.render(this, null);
+                this.renderTree = this.originTree.clone(this,this.model,null);
+                // //渲染
+                // root.render(this, null);
+                
                 this.doModuleEvent('onBeforeRenderToHtml');
                 let changeDoms = [];
                 // 比较节点
-                root.compare(oldTree, changeDoms);
+                this.renderTree.compare(oldTree, changeDoms);
                 //刪除和替換
                 for(let item of changeDoms){
                     let[n1,n2,pEl] = [
@@ -232,14 +233,14 @@ export class Module {
                     }
                 }
             }
-            //执行每次渲染后事件
-            this.doModuleEvent('onRender');
         }
         
         //设置已渲染状态
         this.state = 4;
         //执行后置方法
         this.doRenderOps(1);
+        //执行每次渲染后事件
+        this.doModuleEvent('onRender');
         return true;
     }
 
@@ -247,21 +248,15 @@ export class Module {
      * 执行首次渲染
      * @param root 	根虚拟dom
      */
-    private doFirstRender(root: Element) {
+    private doFirstRender() {
         this.doModuleEvent('onBeforeFirstRender');
         //渲染树
-        this.renderTree = root;
-        if (this.model) {
-            root.model = this.model;
-        }
-
-        root.render(this, null);
+        this.renderTree = this.originTree.clone(this,this.model,null);;
         this.doModuleEvent('onBeforeFirstRenderToHTML');
         //清空子元素
         Util.empty(this.container);
         //渲染到html
-        root.renderToHtml(this, this.container,true);
-        this.container.appendChild(this.objectManager.getNode(root.key));
+        this.renderTree.renderToHtml(this, this.container,true);
         //执行首次渲染后事件
         this.doModuleEvent('onFirstRender');
     }
@@ -487,21 +482,27 @@ export class Module {
      * @param props     属性值
      */
     public setProps(props:any){
-        //为提升性能，只进行浅度比较
-        //如果相同且属性值不含对象，则返回
-        let change:boolean = !Util.compare(this.props,props);
-        if(!change){
-            if(props){
-                for(let p of Object.keys(props)){
-                    if(typeof p === 'object' && !Util.isFunction(p)){
-                        change = true;
-                        break;
-                    }
+        const keys = Object.getOwnPropertyNames(props);
+        let len1 = keys.indexOf('$data')===-1?keys.length:keys.length-1;
+        const keys1 = this.props?Object.getOwnPropertyNames(this.props):[];
+        let len2 = keys.indexOf('$data')===-1?keys1.length:keys1.length-1;
+        let change:boolean = false;
+        if(len1 !== len2){
+            change = true;
+        }else{
+            for(let k of keys){
+                if(k !== '$data'){
+                    continue;
+                }
+                // object 默认改变
+                if(props[k] !== this.props[k] || typeof(props[k]) === 'object'){
+                    change = true;
+                    break;
                 }
             }
         }
-        if(change){
-            this.props = props;
+        this.props = props;
+        if(change){ //有改变，进行编译并激活
             this.compile();
             this.active();
         }

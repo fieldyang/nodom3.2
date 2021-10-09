@@ -101,10 +101,10 @@ export class Compiler {
                 if(stg === etg){
                     // 添加到父节点
                     let po = tagObjs.pop();
-                    po.children = po.children.concat(chds);
-                    this.handleSlot(po);
+                    po.children = (po.children||[]).concat(chds);
+                    // this.handleSlot(po);
                     if(tagObjs.length>0){
-                        tagObjs[tagObjs.length-1].children.push(po);
+                        tagObjs[tagObjs.length-1].add(po);
                     }
                     if(isPreTag && etg === 'pre'){
                         isPreTag = false;
@@ -123,7 +123,7 @@ export class Compiler {
                 }
                 //前一个文本节点存在，则作为前一个节点的孩子
                 if(ii>0 && textStack[ii] !== ''){
-                    tagObjs[tagObjs.length-1].children.push(this.handleText(textStack[ii]));
+                    tagObjs[tagObjs.length-1].add(this.handleText(textStack[ii]));
                     textStack[ii] = '';
                 }
                 if(!tag.endsWith('\/>')){ // 非自闭合

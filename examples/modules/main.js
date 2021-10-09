@@ -28,7 +28,7 @@ export class ModuleMain extends Module{
                 <hr/>
                 <p>第二个子模块</p>
                 <h2>替换plug</h2>
-                <ModuleA x-data={{{'..yyy':'xxx',n:'name',x1:'x.y',x2:['y',true]}}} xxx='222'>
+                <ModuleA $yyy={{xxx}} $n={{name}} $x1={{x.y}},$x2={{y}} xxx='222'>
                     <slot>
                         <h3 style='color:red'> hello change plug 2</h3>    
                     </slot>

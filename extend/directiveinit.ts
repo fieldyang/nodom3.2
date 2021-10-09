@@ -28,13 +28,10 @@ export default (function () {
             let m: Module;
             //存在moduleId，表示已经渲染过，不渲染
             let mid = this.getParam(module,dom,'moduleId');
+            let handle:boolean = true;
             if (mid) {
                 m = ModuleFactory.get(mid);
-                if(!dom.hasProp('once')){
-                    dom.handleProps(module);
-                    //设置props，如果改变了props，启动渲染
-                    m.setProps(Object.fromEntries(dom.props));
-                }
+                handle = !dom.hasProp('once');
             } else {
                 m = ModuleFactory.get(this.value);
                 if (!m) {
@@ -48,9 +45,21 @@ export default (function () {
                 m.setContainerKey(dom.key);
                 //添加到渲染器
                 m.active();
-                //设置props，如果改变了props，启动渲染
+            }
+            if(handle){ //需要处理
                 dom.handleProps(module);
-                m.setProps(Object.fromEntries(dom.props));
+                //设置props，如果改变了props，启动渲染
+                let o={$data:{}};
+                for(let p of dom.props){
+                    if(p[0][0] === '$'){ //数据
+                        o.$data[p[0].substr(1)] = p[1];
+                        //删除属性
+                        dom.delProp(p[0]);
+                    }else{ //非数据
+                        o[p[0]] = p[1];
+                    }
+                }
+                m.setProps(o);
             }
         },
         8
@@ -77,38 +86,26 @@ export default (function () {
     createDirective(
         'repeat',
         function(module:Module,dom:Element){
-            const parent = dom.parent;
-            dom.dontRender = true;
             let rows = this.value;
             // 无数据，不渲染
             if (!Util.isArray(rows) || rows.length === 0) {
                 return;
             }
-            dom.dontRender = false;
-            let chds = [];
-            // 移除指令
-            dom.removeDirectives(['repeat']);
-            for (let i = 0; i < rows.length; i++) {
-                let node = dom.clone();
-                //设置modelId
-                node.model = rows[i];
-                //设置key
-                Util.setNodeKey(node,node.model.$key, true);
-                rows[i].$index = i;
-                chds.push(node);
-            }
-            //找到并追加到dom后
-            if (chds.length > 0) {
-                for (let i = 0, len = parent.children.length; i < len; i++) {
-                    if (parent.children[i] === dom) {
-                        chds = [i + 1, 0].concat(chds);
-                        Array.prototype.splice.apply(parent.children, chds);
-                        break;
-                    }
-                }
-            }
-            // 不渲染该节点
+            const parent = dom.parent;
             dom.dontRender = true;
+            let chds = [];
+            //从源树获取，才可能得到子节点
+            let dom1 = module.originTree.query(dom.key);
+            for (let i = 0; i < rows.length; i++) {
+                rows[i].$index = i;
+                dom1.staticNum++;
+                let node:Element = dom1.clone(module,rows[i],parent,false,function(){
+                    this.removeDirectives('repeat');
+                });
+                //设置key
+                Util.setNodeKey(node,rows[i].$key, true);
+            }    
+            
         },
         2
     );
@@ -167,7 +164,7 @@ export default (function () {
                 //递归名，默认default
                 const name = '$recurs.' + (dom.getProp('name') || 'default');
                 if(!module.objectManager.get(name)){
-                    module.objectManager.set(name,dom.clone());
+                    module.objectManager.set(name,dom.clone(module,null,null));
                 }
             }
         },
@@ -246,59 +243,57 @@ export default (function () {
      * 指令名 data
      * 描述：从当前模块获取数据并用于子模块，dom带module指令时有效
      */
-    createDirective('data',
-        function(module:Module,dom:Element){
-            if (typeof this.value !== 'object' || !dom.hasDirective('module')){
-                return;
-            }
-            let mdlDir:Directive = dom.getDirective(module,'module');
-            let mid = mdlDir.getParam(module,dom,'moduleId');
-            if(!mid){
-                return;
-            }
-            let obj = this.value;
-            //子模块
-            let subMdl = ModuleFactory.get(mid);
-            //子model
-            let m: Model = subMdl.model;
-            let model = dom.model;
-            Object.getOwnPropertyNames(obj).forEach(p => {
-                //字段名
-                let field;
-                // 反向修改
-                let reverse = false;
-                if (Array.isArray(obj[p])) {
-                    field = obj[p][0];
-                    if (obj[p].length > 1) {
-                        reverse = obj[p][1];
-                    }
-                    //删除reverse，只保留字段
-                    obj[p] = field;
-                } else {
-                    field = obj[p];
-                }
+    // createDirective('data',
+    //     function(module:Module,dom:Element){
+    //         if (typeof this.value !== 'object' || !dom.hasDirective('module')){
+    //             return;
+    //         }
+    //         let mdlDir:Directive = dom.getDirective(module,'module');
+    //         let mid = mdlDir.getParam(module,dom,'moduleId');
+    //         if(!mid){
+    //             return;
+    //         }
+    //         let obj = this.value;
+    //         //子模块
+    //         let subMdl = ModuleFactory.get(mid);
+    //         //子model
+    //         let m: Model = subMdl.model;
+    //         let model = dom.model;
+    //         Object.getOwnPropertyNames(obj).forEach(p => {
+    //             //字段名
+    //             let field;
+    //             // 反向修改
+    //             let reverse = false;
+    //             if (Array.isArray(obj[p])) {
+    //                 field = obj[p][0];
+    //                 if (obj[p].length > 1) {
+    //                     reverse = obj[p][1];
+    //                 }
+    //                 //删除reverse，只保留字段
+    //                 obj[p] = field;
+    //             } else {
+    //                 field = obj[p];
+    //             }
                 
-                let d = model.$get(field);
-                //数据赋值
-                if (d !== undefined) {
-                    //对象需要克隆
-                    if(typeof d === 'object'){
-                        d = Util.clone(d,/^\$/);
-                    }
-                    m[p] = d;
-                }
-                //反向处理
-                if (reverse) {
-                    m.$watch(p, function (ov, nv) {
-                        if (model) {
-                            model.$set(field, nv);
-                        }
-                    });
-                }
-            });
-        },
-        9
-    );
+    //             let d = model.$get(field);
+    //             //数据赋值
+    //             if (d !== undefined) {
+    //                 //对象直接引用，需将model绑定到新模块
+    //                 if(typeof d === 'object'){
+    //                     ModelManager.bindToModule(d,mid);
+    //                 }
+    //                 m[p] = d;
+    //             }
+    //             //反向处理（对象无需进行反向处理）
+    //             if (reverse && typeof d !== 'object') {
+    //                 m.$watch(p, function (model1,ov, nv) {
+    //                     model.$set(field, nv);
+    //                 });
+    //             }
+    //         });
+    //     },
+    //     9
+    // );
     
     /**
      * 指令名 field

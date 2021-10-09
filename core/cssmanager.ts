@@ -36,6 +36,7 @@ export class CssManager{
         if(!dom || dom.tagName.toLowerCase() !== 'style' || dom.getProp('scope') !== 'this'){
             return;
         }
+        
         module.renderTree.addClass(this.cssPreName + module.id);
     }
 
@@ -49,6 +50,7 @@ export class CssManager{
         if(!dom.parent || dom.parent.tagName.toLowerCase() !== 'style'){
             return false;
         }
+        console.log(this);
         //scope=this，在模块根节点添加 限定 class
         const preName = dom.parent.getProp('scope') === 'this'?this.cssPreName + module.id:undefined;
         let pre;

@@ -5,6 +5,8 @@ import { Module } from "./module";
 import { Util } from "./util";
 import { Expression } from "./expression";
 import { GlobalCache } from "./globalcache";
+import { NError } from "./error";
+import { NodomMessage } from "./nodom";
 
 /**
  * 指令类
@@ -39,6 +41,9 @@ export  class Directive {
     constructor(type:string,value:string|Expression) {
         this.id = Util.genId();
         this.type = DirectiveManager.getType(type);
+        if(!this.type){
+            throw new NError('notexist1',NodomMessage.TipWords['directive'],type);
+        }
         if (Util.isString(value)) {
             this.value = (<string>value).trim();
         }else if(value instanceof Expression){

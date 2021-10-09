@@ -45,7 +45,17 @@ export class ModuleA extends Module{
 
     methods = {
         onBeforeFirstRender(){
+            // console.log(this);
+        },
+        onBeforeRender(model){
             console.log(this);
+            if(!this.props || !this.props.$data){
+                return;
+            }
+            for(let k of Object.keys(this.props.$data)){
+                console.log(k,this.props.$data[k])
+                model[k] = this.props.$data[k];
+            }
         },
         changeX2(model,dom,){
             model.x2 = 'hahaha'

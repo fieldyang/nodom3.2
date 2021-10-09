@@ -36,40 +36,40 @@ export class Element {
     /**
      * 指令集
      */
-    public directives: any[] = [];
+    public directives: any[];
 
     /**
      * 直接属性 不是来自于attribute，而是直接作用于html element，如el.checked,el.value等
      */
-    public assets: Map<string, any> = new Map();
+    public assets: Map<string, any>;
 
     /**
      * 静态属性(attribute)集合
      * {prop1:value1,...}
      */
-    public props: Map<string,any> = new Map();
+    public props: Map<string,any>;
 
     /**
      * 含表达式的属性集合
      * {prop1:value1,...}
      */
-    public exprProps: Map<string,number> = new Map();
+    public exprProps: Map<string,Expression>;
 
     /**
      * 事件集合,{eventName1:nodomNEvent1,...}
      * 一个事件名，可以绑定多个事件方法对象
      */
-    public events: Map<string, number[]> = new Map();
+    public events: Map<string, number[]>;
 
     /**
      * 表达式+字符串数组，用于textnode
      */
-    public expressions: Array<Expression | string> = [];
+    public expressions: Array<Expression | string>;
 
     /**
      * 子element [key1,key2,key3...]
      */
-    public children: Array<Element> = [];
+    public children: Array<Element>;
 
     /**
      * 父虚拟dom
@@ -98,13 +98,13 @@ export class Element {
      * 渲染前（获取model后）执行方法集合,可以是方法名（在module的methods中定义），也可以是函数
      * 函数的this指向element的model，参数为(element,module)
      */
-    private beforeRenderOps: any[] = [];
+    private beforeRenderOps: any[];
 
     /**
      * 渲染后（renderToHtml前）执行方法集合，可以是方法名（在module的methods中定义），也可以是函数
      * 函数的this指向element的model，参数为(element,module)
      */
-    private afterRenderOps: any[] = [];
+    private afterRenderOps: any[];
  
 
     /**
@@ -123,22 +123,15 @@ export class Element {
     /**
      * 渲染到virtualdom树
      * @param module 	模块
+     * @param model     模型
      * @param parent 	父节点
      * @returns         渲染成功（dontRender=false） true,否则false
      */
-    public render(module: Module, parent?: Element): Boolean {
+    public render(module: Module,model:Model, parent?: Element){
+        this.model = model;
         // 设置父对象
         if (parent) {
-            // 设置modelId
-            if (!this.model) {
-                this.model = parent.model;
-            }
             this.parent = parent;
-        }
-
-        //设置model为模块model
-        if (!this.model) {
-            this.model = module.model;
         }
         //先执行model指令
         if(this.hasDirective('model')){
@@ -152,11 +145,11 @@ export class Element {
         if (this.tagName) { //element
             if (!this.handleDirectives(module)) {
                 this.doDontRender(module,parent);
-                return false;
+                return;
             }
             this.handleProps(module);
             //如果有表达式属性，则staticNum为-1
-            if(this.exprProps.size>0){
+            if(this.exprProps && this.exprProps.size>0){
                 this.staticNum = -1;
             }
             //处理style 元素
@@ -164,19 +157,11 @@ export class Element {
         } else{ //textContent
             this.handleText(module);
         }
-    
-        //子节点渲染
-        for (let i = 0; i < this.children.length; i++) {
-            let item = this.children[i];
-            if(!item.render(module, this)) {
-                item.doDontRender(module,this);
-                i--;
-            }
+        if(parent){
+            parent.add(this);
         }
-
         //后置方法集执行
         this.doRenderOp(module, 'after');
-        return true;
     }
 
     /**
@@ -227,9 +212,11 @@ export class Element {
             //创建element
             let el= Util.newEl(vdom.tagName);
             //设置属性
-            for(let v of vdom.props){
-                if (typeof v[1] != 'function'){
-                    el.setAttribute(v[0], v[1]===undefined?'':v[1]);
+            if(vdom.props){
+                for(let v of vdom.props){
+                    if (typeof v[1] != 'function'){
+                        el.setAttribute(v[0], v[1]===undefined?'':v[1]);
+                    }
                 }
             }
             
@@ -279,38 +266,41 @@ export class Element {
 
     /**
      * 克隆
+     * @param module        模块
      * @param changeKey     是否更改key，如果为true，则生成的节点用新的key
      */
-    public clone(changeKey?:boolean): Element {
+    public clone(module:Module,model:Model,parent?:Element,changeKey?:boolean,beforeRenderOp?:Function): Element {
         let dst: Element = new Element(this.tagName,changeKey?Util.genId() + '':this.key);
         
         dst.expressions = this.expressions;
         dst.textContent = this.textContent;
         dst.staticNum = this.staticNum;
+        
 
         //普通属性
-        if(this.props.size>0){
+        if(this.props && this.props.size>0){
             for(let p of this.props){
-                dst.props.set(p[0],p[1]);
+                dst.setProp(p[0],p[1]);
             }
         }
 
         //表达式属性
-        if(this.exprProps.size>0){
+        if(this.exprProps && this.exprProps.size>0){
             for(let p of this.exprProps){
-                dst.exprProps.set(p[0],p[1]);
+                dst.setProp(p[0],p[1]);
             }
         }
 
         //assets
-        if(this.assets.size>0){
+        if(this.assets && this.assets.size>0){
             for(let p of this.assets){
-                dst.assets.set(p[0],p[1]);
+                dst.setAsset(p[0],p[1]);
             }
         }
 
         //事件
-        if(this.events.size>0){
+        if(this.events && this.events.size>0){
+            dst.events = new Map();
             for(let p of this.events){
                 //复制数组
                 dst.events.set(p[0],p[1].slice(0));
@@ -318,15 +308,35 @@ export class Element {
         }
 
         //指令
-        for(let d of this.directives){
-            dst.directives.push({type:d.type,id:d.id});
+        if(this.directives && this.directives.length>0){
+            dst.directives = [];
+            for(let d of this.directives){
+                dst.directives.push({type:d.type,id:d.id});
+            }
+        }
+        
+
+        if(model){
+            if(beforeRenderOp){
+                beforeRenderOp.apply(dst);
+            }
+            //渲染
+            dst.render(module,model,parent);
         }
 
         //children
-        for(let c of this.children){
-            dst.add(c.clone(changeKey));
+        if(!dst.dontRender){
+            if(this.children && this.children.length>0){
+                for(let c of this.children){
+                    let c1 = c.clone(module,dst.model,dst,changeKey);
+                    //此次未渲染，加入到父
+                    if(!model){
+                        dst.add(c1);
+                    }
+                }
+            }
         }
-
+        
         //如果staticNum>0，则表示为新编译节点，第二次clone时预设为不再需要比较
         if(this.staticNum>0){
             this.staticNum--;
@@ -339,6 +349,9 @@ export class Element {
      * @param module    模块
      */
     public handleDirectives(module: Module) {
+        if(!this.directives || this.directives.length===0){
+            return true;
+        }
         for (let d of this.directives) {
             //model指令已经执行，不再执行
             if(d.type === 'model'){
@@ -373,6 +386,7 @@ export class Element {
                 if(!expr){
                     return;
                 }
+                
                 let v1 = expr.val(module,this.model);
                 value += v1 !== undefined ? v1 : '';
             } else {
@@ -387,12 +401,15 @@ export class Element {
       * @param module    模块
       */
     public handleProps(module: Module) {
+        if(!this.exprProps || this.exprProps.size === 0){
+            return;
+        }
         for (let k of this.exprProps) {
-            let v = module.objectManager.getExpression(k[1]).val(module,this.model);
+            let v = k[1].val(module,this.model);
             if (k[0] === 'style') {
                 this.addStyle(v);
             } else {
-                this.props.set(k[0],v);
+                this.setProp(k[0],v);
             }
         }
     }
@@ -402,7 +419,7 @@ export class Element {
      * @param el    dom对应的html element
      */
     public handleAssets(el: HTMLElement | SVGElement) {
-        if (!this.tagName || !el) {
+        if (!this.tagName || !el || !this.assets) {
             return;
         }
 
@@ -427,7 +444,7 @@ export class Element {
      * @param module    模块
      */
     public handleEvents(module: Module) {
-        if (this.events.size === 0) {
+        if (!this.events || this.events.size === 0) {
             return;
         }
         EventManager.bind(module,this);
@@ -438,20 +455,26 @@ export class Element {
      * @param directives 	待删除的指令类型数组或指令类型
      */
     public removeDirectives(directives: string | string[]) {
+        if(!this.directives){
+            return;
+        }
         if (typeof directives === 'string') {
             let ind;
             if ((ind = this.directives.findIndex(item => item.name === directives)) !== -1) {
                 this.directives.splice(ind, 1);
             }
-            return;
+        }else{
+            //数组
+            directives.forEach(d=>{
+                let ind;
+                if ((ind = this.directives.findIndex(item => item.type === d)) !== -1) {
+                    this.directives.splice(ind, 1);
+                }
+            });
         }
-        //数组
-        directives.forEach(d=>{
-            let ind;
-            if ((ind = this.directives.findIndex(item => item.type === d)) !== -1) {
-                this.directives.splice(ind, 1);
-            }
-        });
+        if(this.directives.length === 0){
+            delete this.directives;
+        }
     }
 
     /**
@@ -460,8 +483,9 @@ export class Element {
      * @param sort          是否排序
      */
     public addDirective(directive: Directive, sort?: boolean) {
-        //不重复添加
-        if(this.directives.find(item=>item.type === directive.type.name)){
+        if(!this.directives){
+            this.directives = [];
+        }else if(this.directives.find(item=>item.type === directive.type.name)){
             return;
         }
         this.directives.push({type:directive.type.name,id:directive.id});
@@ -475,6 +499,9 @@ export class Element {
      * 指令排序
      */
     public sortDirective(){
+        if(!this.directives){
+            return;
+        }
         if (this.directives.length > 1) {
             this.directives.sort((a, b) => {
                 return DirectiveManager.getType(a.type).prio < DirectiveManager.getType(b.type).prio?-1:1;
@@ -488,6 +515,9 @@ export class Element {
      * @returns             true/false
      */
     public hasDirective(typeName:string): boolean {
+        if(!this.directives){
+            return false;
+        }
         return this.directives.findIndex(item => item.type === typeName) !== -1;
     }
 
@@ -498,6 +528,9 @@ export class Element {
      * @returns                 指令对象
      */
     public getDirective(module:Module,directiveType:string): Directive {
+        if(!this.directives){
+            return;
+        }
         let r:any = this.directives.find(item => item.type === directiveType);
         if(r){
             return module.objectManager.getDirective(r.id);
@@ -533,6 +566,7 @@ export class Element {
      * 添加子节点
      */
     public add(dom:Element){
+        this.children ||= [];
         this.children.push(dom);
         dom.parent = this;
     }
@@ -617,14 +651,14 @@ export class Element {
     public addStyle(styStr: string) {
         let styleStr = this.props.get('style');
         if (!styleStr) {
-            this.props.set('style', styStr);
+            this.setProp('style', styStr);
             this.setStaticOnce();
         } else {
             let sa: any[] = styleStr.trim().split(/;\s+/);
             if (!sa.includes(styStr)) {
                 sa.push(styStr);
                 styleStr = sa.join(';');
-                this.props.set('style',styleStr);
+                this.setProp('style',styleStr);
                 this.setStaticOnce();
             }
         }
@@ -635,7 +669,7 @@ export class Element {
      * @param styStr style字符串
      */
     public removeStyle(styStr: string) {
-        let styleStr = this.props.get('style');
+        let styleStr = this.getProp('style');
         if (!styleStr) {
             return;
         } else {
@@ -646,7 +680,7 @@ export class Element {
                 styleStr = sa.join(';');
             }
         }
-        this.props.set('style',styleStr);
+        this.setProp('style',styleStr);
         this.setStaticOnce();
     }
 
@@ -656,7 +690,21 @@ export class Element {
      * @param isExpr    是否只检查表达式属性
      */
     public hasProp(propName: string,isExpr?:boolean) {
-        return isExpr?this.exprProps.has(propName):(this.props.has(propName) || this.exprProps.has(propName));
+        if(isExpr){
+            if(this.exprProps){
+                return this.exprProps.has(propName);
+            }
+        }else{
+            let r;
+            if(this.props){
+                r = this.props.has(propName);
+            }
+            if(!r && this.exprProps){
+                return this.exprProps.has(propName);
+            }
+            return r;
+        } 
+        return false;
     }
 
     /**
@@ -665,7 +713,17 @@ export class Element {
      * @param isExpr    是否只获取表达式属性
      */
     public getProp(propName: string,isExpr?:boolean) {
-        return isExpr?this.exprProps.get(propName):(this.props.get(propName) || this.exprProps.get(propName));
+        if(isExpr){
+            if(this.exprProps){
+                return this.exprProps.get(propName);
+            }
+        }else{
+            if(this.props && this.props.has(propName)){
+                return this.props.get(propName);
+            }else if(this.exprProps){
+                return this.exprProps.get(propName);
+            }
+        }
     }
 
     /**
@@ -674,9 +732,16 @@ export class Element {
      * @param v         属性值
      */
     public setProp(propName: string, v: any) {
+        
         if(v instanceof Expression){
-            this.exprProps.set(propName,v.id);
+            if(!this.exprProps){
+                this.exprProps = new Map();
+            }
+            this.exprProps.set(propName,v);
         } else {
+            if(!this.props){
+                this.props = new Map();
+            }
             this.props.set(propName,v);
         }
     }
@@ -687,15 +752,24 @@ export class Element {
      */
     public delProp(props: string | string[]) {
         if (Util.isArray(props)) {
-            for (let p of <string[]>props) {
-                this.exprProps.delete(p);
+            if(this.exprProps){
+                for (let p of <string[]>props) {
+                    this.exprProps.delete(p);
+                }
             }
-            for (let p of <string[]>props) {
-                this.props.delete(p);
+            
+            if(this.props){
+                for (let p of <string[]>props) {
+                    this.props.delete(p);
+                }
             }
         } else {
-            this.exprProps.delete(<string>props);
-            this.props.delete(<string>props);
+            if(this.exprProps){
+                this.exprProps.delete(<string>props);
+            }
+            if(this.props){
+                this.props.delete(<string>props);
+            }
         }
         //设置静态标志，至少要比较一次
         this.setStaticOnce();
@@ -707,6 +781,9 @@ export class Element {
      * @param value         asset value
      */
     public setAsset(assetName: string, value: any) {
+        if(!this.assets){
+            this.assets = new Map();
+        }
         this.assets.set(assetName, value);
     }
 
@@ -715,6 +792,9 @@ export class Element {
      * @param assetName     asset name
      */
     public delAsset(assetName: string) {
+        if(!this.assets){
+            return;
+        }
         this.assets.delete(assetName);
     }
 
@@ -745,25 +825,29 @@ export class Element {
             } else if(this.staticNum || dst.staticNum){ //节点类型相同，但有一个不是静态节点，进行属性和asset比较
                 let change = false;
                 //属性比较
-                if(this.props.size !== dst.props.size){
+                if(!this.props && dst.props || this.props && !dst.props || this.props && dst.props && this.props.size !== dst.props.size){
                     change = true;
                 }else{
-                    for(let v of this.props){
-                        if(v[1] !== dst.props.get(v[0])){
-                            change = true;
-                            break;
+                    if(this.props){
+                        for(let v of this.props){
+                            if(v[1] !== dst.props.get(v[0])){
+                                change = true;
+                                break;
+                            }
                         }
                     }
                 }
 
                 //asset比较
-                if(this.assets.size !== dst.assets.size){
+                if(!this.assets&&dst.assets || this.assets && !dst.assets || this.assets && dst.assets && this.assets.size !== dst.assets.size){
                     change = true;
                 }else{
-                    for(let v of this.assets){
-                        if(v[1] !== dst.assets.get(v[0])){
-                            change = true;
-                            break;
+                    if(this.assets){
+                        for(let v of this.assets){
+                            if(v[1] !== dst.assets.get(v[0])){
+                                change = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -892,6 +976,9 @@ export class Element {
      * @param event     事件对象
      */
     public addEvent(event: NEvent) {
+        if(!this.events){
+            this.events =  new Map();
+        }
         if(!this.events.has(event.name)){
             this.events.set(event.name, [event.id]);
         }else{
@@ -948,10 +1035,12 @@ export class Element {
         if (this.key === key) {
             return this;
         }
-        for (let i = 0; i < this.children.length; i++) {
-            let dom = this.children[i].query(key);
-            if (dom) {
-                return dom;
+        if(this.children){
+            for (let i = 0; i < this.children.length; i++) {
+                let dom = this.children[i].query(key);
+                if (dom) {
+                    return dom;
+                }
             }
         }
     }
@@ -1001,8 +1090,14 @@ export class Element {
      */
      addRenderOp(method: any, type: string) {
         if (type === 'before') {
+            if(!this.beforeRenderOps){
+                this.beforeRenderOps = [];
+            }
             this.beforeRenderOps.push(method);
         } else {
+            if(!this.afterRenderOps){
+                this.afterRenderOps = [];
+            }
             this.afterRenderOps.push(method);
         }
     }
@@ -1015,6 +1110,9 @@ export class Element {
     doRenderOp(module: Module, type: string) {
         // 否则执行注册在element上的前置渲染方法
         let arr = type === 'before' ? this.beforeRenderOps : this.afterRenderOps;
+        if(!arr){
+            return;
+        }
         for (let m of arr) {
             //可能是字符串
             if (typeof m === 'string') {
